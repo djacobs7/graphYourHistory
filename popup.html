@@ -1,0 +1,131 @@
+<div id="reddits">
+Hello World
+</div>
+
+
+<script src="jquery-1.4.3.js" type="text/javascript"></script>
+<script>
+
+function get_domain_from_url(url){
+        var domain = url.match(/^[\w-]+:\/*\[?([\w\.:-]+)\]?(?::\d+)?/)[1];
+        return domain;
+}
+$(document).ready(function(){
+	getRedditDomains();
+        
+	
+});
+
+reddit_visits = [];
+function getRedditDomains() {
+	chrome.history.search({text: ""}, function(search_results) {
+		var domains = [];
+		$.each(search_results, function(search_result, index) {
+			if( search_result.url && isRedditDomain(search_result.url)){
+				domains.push(search_result.url);
+			} 	
+				
+                });
+		populateRedditVisits( search_results, domains );
+        });
+}
+
+
+function iterateOverAllVisits(search_results, handler ){
+
+
+	$.each( search_results, function(search_result, index) {
+		if ( search_result.url )
+		{
+			console.log( search_result.url );
+			chrome.history.getVisits( { url: search_result.url }, function( visit_items ){
+				for ( var i in visit_items ){
+					var visit_item = visit_items[i];
+					handler(visit_item);
+				}
+			})
+		};
+	});
+}
+
+all_visits = {};
+domain_link_counts = {};
+function populateRedditVisits( search_results, domains ){
+	
+	iterateOverAllVisits(search_results, function( visit_item ){
+				all_visits[visit_item.visitId] = {url: search_result.url };
+				});
+	iterateOverAllVisits(search_results, function(visit_item){
+			var referring_url =  all_visits[ visit_item.referringVisitId ].url;
+			if ( isRedditDomain(referring_url) ){
+				domain_link_counts[ referring_url ]++;
+			}
+		});
+
+
+
+		
+	}
+/*	$.each(domains, function( domain, index ) {
+
+		chrome.history.getVisits( { url: domain }, 
+		function(visit_items){ 
+			visits_for_domain  = $.map( visit_items, function(element, index){ return element.visitId;  } );; 
+
+
+
+		} );
+
+	});*/
+var total_reddits = 0;
+function getVisits(result ){
+
+
+		
+		chrome.history.getVisits( {url:result.url} , function( visit_items ){
+			for (var j in visit_items ){
+				var visit_item = visit_items[j];
+				if ( visit_item.transition == 'link' )
+				{
+					var referring_visit_id = visit_item.referringVisitId;
+					
+					if ( $.inArray( referring_visit_id, reddit_visits ) >= 0 )
+					{
+						console.log( result.url );
+						total_reddits++;
+					}
+				}
+			}	
+
+			$('#reddits').html( total_reddits);	
+		});
+
+}
+
+function isRedditDomain(url){
+	return get_domain_from_url(url).indexOf('reddit.com') >= 0;
+}
+
+function search( visits_for_domain ) {
+
+
+chrome.history.search({text: ""}, 
+   function( results ){
+        for( var i in results ){
+		var result = results[i];
+		var domain = get_domain_from_url( result.url );
+		if ( domain.indexOf( 'reddit.com') >= 0 )
+		{
+			total_reddits++;		
+		}
+		else{
+			getVisits( result );
+		}
+
+			
+	}
+     });
+
+}
+
+</script>
