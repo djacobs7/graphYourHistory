@@ -1,6 +1,14 @@
 <div id="reddits">
+
 Hello World
 </div>
+<div id="chart">
+
+</div>
+<script type="text/javascript" src="http://www.google.com/jsapi"></script>
+<script type="text/javascript">
+	google.load("visualization", "1", {packages:["corechart", "piechart"]});
+</script>
 
 
 <script src="jquery-1.4.3.js" type="text/javascript"></script>
@@ -11,61 +19,127 @@ function get_domain_from_url(url){
         return domain;
 }
 $(document).ready(function(){
-	getRedditDomains();
         
-	
+google.setOnLoadCallback( getDomains );	
+ 	
 });
 
+
+top_level_domains = {};
 reddit_visits = [];
-function getRedditDomains() {
-	chrome.history.search({text: ""}, function(search_results) {
+
+rs = [];
+
+DOMAIN = 'reddit.com';
+function getDomains() {
+	chrome.history.search({text: "", maxResults:10000}, function(search_results) {
 		var domains = [];
-		$.each(search_results, function(search_result, index) {
-			if( search_result.url && isRedditDomain(search_result.url)){
-				domains.push(search_result.url);
+		$.each(search_results, function(index, search_result) {
+
+			if( search_result.url ){
+				var domain = get_domain_from_url( search_result.url ) ;
+				if (!top_level_domains[domain])
+				{
+					top_level_domains[ domain ] = {};
+				}
+				top_level_domains[ domain ][search_result.url] = 0;
+				
+//			  domains.push(search_result.url);
+//			domain_link_counts[search_result.url] = 0;
 			} 	
 				
                 });
-		populateRedditVisits( search_results, domains );
+		populateVisits( search_results, domains );
         });
 }
 
 
-function iterateOverAllVisits(search_results, handler ){
+function iterateOverAllVisits(search_results, handler, allDone ){
 
-
-	$.each( search_results, function(search_result, index) {
+	var count = search_results.length;
+	$.each( search_results, function( index, search_result) {
 		if ( search_result.url )
 		{
-			console.log( search_result.url );
+
 			chrome.history.getVisits( { url: search_result.url }, function( visit_items ){
 				for ( var i in visit_items ){
 					var visit_item = visit_items[i];
-					handler(visit_item);
+					handler(visit_item, search_result);
+
 				}
+				
+				count--;
+				if ( count == 0 ){
+					allDone();
+				}					
 			})
 		};
 	});
 }
 
 all_visits = {};
-domain_link_counts = {};
-function populateRedditVisits( search_results, domains ){
-	
-	iterateOverAllVisits(search_results, function( visit_item ){
+var domain_link_counts = {};
+function populateVisits( search_results, domains ){
+	iterateOverAllVisits(search_results, 
+			function( visit_item , search_result){
 				all_visits[visit_item.visitId] = {url: search_result.url };
-				});
-	iterateOverAllVisits(search_results, function(visit_item){
-			var referring_url =  all_visits[ visit_item.referringVisitId ].url;
-			if ( isRedditDomain(referring_url) ){
-				domain_link_counts[ referring_url ]++;
-			}
-		});
-
-
-
-		
+			},
+			function(){ calculateDomainStatistics( search_results ); } );
 	}
+
+function calculateDomainStatistics(search_results){	
+	iterateOverAllVisits(search_results, 
+		function(visit_item, search_result){
+			var referring_visit = all_visits[visit_item.referringVisitId ] ;
+			if ( referring_visit ){
+				var referring_url =  referring_visit.url;
+
+				var referring_domain = get_domain_from_url( referring_url );
+				top_level_domains[referring_domain][ referring_url ]++;
+
+			}
+			else
+			{
+				 var visit = all_visits[ visit_item.visitId ];
+				 var domain = get_domain_from_url( visit.url );
+				 if ( ! top_level_domains[domain]['root'] ){
+						top_level_domains[domain]['root'] = 0;
+					}
+					top_level_domains[domain]['root']++;
+			}
+	}, summarizeResults );
+}
+
+function summarizeResults(){
+	
+	for ( var domain in top_level_domains )
+	{
+		var count  = 0;
+		for ( var url in top_level_domains[domain] )
+		{
+			count += top_level_domains[domain][url];
+		}
+		top_level_domains[domain]['count'] = count;
+	}
+	
+	plotPieChart();
+}
+
+function plotPieChart(){
+	var data = new google.visualization.DataTable();
+	data.addColumn('string','Domain');
+	data.addColumn('number','Visits');
+
+	var array_of_arrays = [];
+	for ( var domain in top_level_domains )
+	{
+		array_of_arrays.push( [ domain, top_level_domains[domain].count ] );
+	}
+	data.addRows( array_of_arrays );
+
+	var chart = new google.visualization.PieChart(document.getElementById( 'chart')  );
+	chart.draw( data, {width: 600, height: 240, title: 'Where does the time go?'});
+}
 /*	$.each(domains, function( domain, index ) {
 
 		chrome.history.getVisits( { url: domain }, 
@@ -102,8 +176,8 @@ function getVisits(result ){
 
 }
 
-function isRedditDomain(url){
-	return get_domain_from_url(url).indexOf('reddit.com') >= 0;
+function isDomain(domain, url){
+	return get_domain_from_url(url).indexOf(domain) >= 0;
 }
 
 function search( visits_for_domain ) {
